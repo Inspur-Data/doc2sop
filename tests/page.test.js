@@ -694,5 +694,70 @@ check('对话的来源按平台写', [html.includes('${esc(chatName(c.source.pla
   check('原来只在签发那一刻出现的片段函数没了', html.includes('function axSnippets('), false);
 }
 
+// ---------- 对话：点（双击选字）回答正文不会把问题再问一遍；示例问题按钮照常发起；存入知识库仍取得到问题 ----------
+{
+  const code = scripts.join('\n');
+  const handler = head => {
+    const start = code.indexOf(head); if (start < 0) throw new Error('找不到 ' + head);
+    let depth = 0, i = start + head.length - 1;
+    for (; i < code.length; i++) { if (code[i] === '{') depth++; if (code[i] === '}' && --depth === 0) break; }
+    return code.slice(start, i + 1) + ');';
+  };
+  // 假元素：closest 只认 tag / .class / [data-x] 组合，够这两个委托用
+  const kebab = k => k.replace(/[A-Z]/g, c => '-' + c.toLowerCase());
+  const el = (tag, cls = [], dataset = {}, parent = null) => ({tag, cls, dataset, parent,
+    classList: {contains: c => cls.includes(c)},
+    matches(sel) {
+      const m = sel.match(/^([a-z]*)((?:\.[\w-]+)*)((?:\[[\w-]+\])*)$/); if (!m) return false;
+      return (!m[1] || m[1] === this.tag) && (m[2].match(/[\w-]+/g) || []).every(c => this.cls.includes(c))
+        && (m[3].match(/[\w-]+/g) || []).every(a => Object.keys(this.dataset).some(k => 'data-' + kebab(k) === a));
+    },
+    closest(sel) { for (let n = this; n; n = n.parent) if (n.matches(sel)) return n; return null; }});
+  global.esc = new Function(`${scripts.join('\n').match(/^const esc = .*$/m)[0]}\nreturn esc;`)();
+  const {addTools} = load('addTools');
+  const thread = el('div'), bot = el('div', ['bot'], {}, thread);
+  bot.insertAdjacentHTML = () => {};
+  bot.querySelector = sel => sel === '.tools' ? {after() {}} : null;
+  addTools(bot, '磁盘满了先看 /var/log', '磁盘满了怎么办？', []);
+  check('回答上记问题不用 data-q（和示例按钮撞名）', [bot.dataset.question, 'q' in bot.dataset], ['磁盘满了怎么办？', false]);
+  const text = el('span', [], {}, el('p', [], {}, el('div', ['card'], {}, bot)));
+
+  const fire = (head, target, extra = {}) => {
+    const calls = [], ls = [], input = {value: ''};
+    const $ = id => id === 'question' ? input : {addEventListener: (t, fn) => ls.push(fn)};
+    const stub = name => (...a) => calls.push([name, ...a]);
+    new Function('$', 'ask', 'askFromHome', 'runPlaybookById', 'noteEditor', 'saveNote', 'go',
+      `let pbTab, mItem, mGroup, runFilter;\n${handler(head)}`)(
+      $, () => calls.push(['ask', input.value]), stub('askFromHome'), stub('runPlaybookById'), stub('noteEditor'), stub('saveNote'), stub('go'));
+    ls.forEach(fn => fn({target, ...extra}));
+    return calls;
+  };
+  const T = "$('thread').addEventListener('click', e => {", H = "$('home').addEventListener('click', e => {";
+  check('点回答正文：不发起查询', fire(T, text), []);
+  check('点回答本身（空白处）：不发起查询', fire(T, bot), []);
+  const ex = el('button', [], {q: '磁盘满了怎么办'}, el('div', ['k'], {}, el('div', ['welcome'], {}, thread)));
+  check('点示例问题按钮：照常发起查询', fire(T, ex), [['ask', '磁盘满了怎么办']]);
+  check('点示例按钮里的字也算', fire(T, el('span', [], {}, ex)), [['ask', '磁盘满了怎么办']]);
+  check('点存入知识库：打开编辑框', fire(T, el('button', [], {savenote: ''}, el('div', ['tools'], {}, bot))).map(c => c[0]), ['noteEditor']);
+  check('首页：示例按钮照常发起', fire(H, el('button', [], {q: '查一下'})), [['askFromHome', '查一下']]);
+  check('首页：不是按钮的 data-q 不发起', fire(H, el('div', [], {q: '查一下'})), []);
+
+  // 存入知识库：编辑框标题和提交的 question 都取自回答上记的问题
+  const box = {innerHTML: '', querySelector: () => ({focus() {}})};
+  global.document = {createElement: () => box};
+  global.usesGeneral = () => false;
+  bot._web = [{index: 'W1', location: 'https://x', url: 'https://x'}];
+  load('noteEditor').noteEditor(bot);
+  check('存入知识库：标题取自原问题', box.innerHTML.includes('value="磁盘满了怎么办"'), true);
+  let sent = null;
+  const realFetch = global.fetch;
+  global.fetch = (url, opt) => { sent = JSON.parse(opt.body); return new Promise(() => {}); };
+  const fields = {'.msg': {}, '.nt': {value: '磁盘满了怎么办'}, '.nb': {value: '先看 /var/log'}, '[data-notego]': {}};
+  new Function(`return async ${extract('saveNote')}`)()(bot, {querySelector: sel => fields[sel]});
+  check('存入知识库：提交的 question 是原问题', sent && sent.question, '磁盘满了怎么办？');
+  for (const k of ['esc', 'document', 'usesGeneral']) delete global[k];
+  global.fetch = realFetch;
+}
+
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail ? 1 : 0);

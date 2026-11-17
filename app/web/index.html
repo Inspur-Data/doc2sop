@@ -1796,7 +1796,7 @@ function arrangeSources(bot, text, done) {
 }
 function addTools(bot, text, question, sources) {
   bot.dataset.raw = text;
-  bot.dataset.q = question;
+  bot.dataset.question = question;   // 不能叫 data-q：那是示例问题按钮的标记，点回答正文会被当成点了示例
   const web = (sources || []).filter(s => s.web);
   bot._web = web;
   bot.insertAdjacentHTML('beforeend',
@@ -1819,7 +1819,7 @@ function addTools(bot, text, question, sources) {
 function noteEditor(bot) {
   const box = document.createElement('div');
   box.className = 'note-edit';
-  const title = (bot.dataset.q || '').replace(/[？?。！!\s]+$/, '').slice(0, 40);
+  const title = (bot.dataset.question || '').replace(/[？?。！!\s]+$/, '').slice(0, 40);
   box.innerHTML = `<div class="hd">存入知识库 · 请先确认内容无误</div>
     <input class="nt" maxlength="60" value="${esc(title)}" placeholder="文档标题">
     <textarea class="nb">${esc((bot.dataset.raw || '').replace(/^\s*(\*\*)?知识库(里|中)没有[^\n]*\n+/, ''))}</textarea>
@@ -1833,7 +1833,7 @@ function noteEditor(bot) {
 }
 async function saveNote(bot, box) {
   const msg = box.querySelector('.msg');
-  const body = {title: box.querySelector('.nt').value.trim(), question: bot.dataset.q || '',
+  const body = {title: box.querySelector('.nt').value.trim(), question: bot.dataset.question || '',
                 answer: box.querySelector('.nb').value.trim(),
                 sources: bot._web.map(s => ({index: s.index, location: s.location, url: s.url}))};
   if (!body.title || !body.answer) { msg.textContent = '标题和内容都不能为空'; return; }
@@ -1943,7 +1943,7 @@ async function pendingHtml() {
 
 $('thread').addEventListener('click', e => {
   const pb = e.target.closest('[data-pb]'); if (pb) { runPlaybookById(pb.dataset.pb); return; }
-  const q = e.target.closest('[data-q]'); if (q) { $('question').value = q.dataset.q; ask(); return; }
+  const q = e.target.closest('button[data-q]'); if (q) { $('question').value = q.dataset.q; ask(); return; }
   const sop = e.target.closest('.rl.sop');
   if (sop) { pbTab = 'all'; mItem = sop.dataset.sop || null; mGroup = null; go('sop'); return; }
   const cite = e.target.closest('.cite');
@@ -3508,7 +3508,7 @@ $('home').addEventListener('click', e => {
   const run = e.target.closest('[data-run]');
   if (run) { runFilter = {sop: '', trigger: ''}; return go('sop', {tab: 'runs', item: run.dataset.run}); }
   if (e.target.closest('[data-gogaps]')) return go('docs', {tab: 'gaps', item: null});
-  const q = e.target.closest('[data-q]'); if (q) return askFromHome(q.dataset.q);
+  const q = e.target.closest('button[data-q]'); if (q) return askFromHome(q.dataset.q);
   if (e.target.closest('#homeAsk')) return askFromHome($('homeQ').value);
   const td = e.target.closest('[data-todo]');
   if (td) {
